@@ -21,29 +21,29 @@ def constant_init(module, constant, bias=0):
     if hasattr(module, 'bias'):
         nn.init.constant_(module.bias, bias)
 
-
+# 保证尺度不变的卷积核
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
-
+#
 class BasicBlock(nn.Module):
     expansion = 1
 
     def __init__(self, inplanes, planes, stride=1, downsample=None, dcn=None):
         super(BasicBlock, self).__init__()
-        self.with_dcn = dcn is not None
+        self.with_dcn = dcn is not None # 是否使用可变卷积 deformable convolution 参数设置
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = BatchNorm2d(planes)
         self.relu = nn.ReLU(inplace=True)
         self.with_modulated_dcn = False
         if not self.with_dcn:
             self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, padding=1, bias=False)
-        else:
+        else: # 可变卷积行为
             from torchvision.ops import DeformConv2d
             deformable_groups = dcn.get('deformable_groups', 1)
-            offset_channels = 18
+            offset_channels = 18 #
             self.conv2_offset = nn.Conv2d(planes, deformable_groups * offset_channels, kernel_size=3, padding=1)
             self.conv2 = DeformConv2d(planes, planes, kernel_size=3, padding=1, bias=False)
         self.bn2 = BatchNorm2d(planes)
