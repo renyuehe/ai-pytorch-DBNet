@@ -64,7 +64,8 @@ class Trainer(BaseTrainer):
             self.optimizer.step()
             if self.config['lr_scheduler']['type'] == 'WarmupPolyLR':
                 self.scheduler.step()
-            # acc iou
+
+            # acc iou 训练时计算的 acc, iou, 训练时不做后处理,  也就是不会生成文本框多边形
             score_shrink_map = cal_text_score(preds[:, 0, :, :], batch['shrink_map'], batch['shrink_mask'], running_metric_text,
                                               thred=self.config['post_processing']['args']['thresh'])
 
@@ -133,12 +134,16 @@ class Trainer(BaseTrainer):
                         if isinstance(value, torch.Tensor):
                             batch[key] = value.to(self.device)
                 start = time.time()
+                # 推理
                 preds = self.model(batch['img'])
+                # 后处理
                 boxes, scores = self.post_process(batch, preds,is_output_polygon=self.metric_cls.is_output_polygon)
                 total_frame += batch['img'].size()[0]
                 total_time += time.time() - start
+                #
                 raw_metric = self.metric_cls.validate_measure(batch, (boxes, scores))
                 raw_metrics.append(raw_metric)
+
         metrics = self.metric_cls.gather_measure(raw_metrics)
         self.logger_info('FPS:{}'.format(total_frame / total_time))
         return metrics['recall'].avg, metrics['precision'].avg, metrics['fmeasure'].avg
@@ -154,7 +159,7 @@ class Trainer(BaseTrainer):
             self._save_checkpoint(self.epoch_result['epoch'], net_save_path)
             save_best = False
             if self.validate_loader is not None and self.metric_cls is not None:  # 使用f1作为最优模型指标
-                recall, precision, hmean = self._eval(self.epoch_result['epoch'])
+                recall, precision, hmean = self._eval(self.epoch_result['epoch']) # recall、precision、hmean就是f1得分
 
                 if self.tensorboard_enable:
                     self.writer.add_scalar('EVAL/recall', recall, self.global_step)

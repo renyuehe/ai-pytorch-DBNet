@@ -30,19 +30,24 @@ def iou_rotate(box_a, box_b, method='union'):
 
 class DetectionIoUEvaluator(object):
     def __init__(self, is_output_polygon=False, iou_constraint=0.5, area_precision_constraint=0.5):
-        self.is_output_polygon = is_output_polygon
-        self.iou_constraint = iou_constraint
-        self.area_precision_constraint = area_precision_constraint
+        self.is_output_polygon = is_output_polygon # 输出是否是多边形
+        self.iou_constraint = iou_constraint # iou 阈值
+        self.area_precision_constraint = area_precision_constraint # precision 阈值
 
-    def evaluate_image(self, gt, pred):
+    def evaluate_image(self, gt, pred): # ★★★ 核心评估函数，评估的是一张图里的若干文字框
+        '''
+        由gt和pred组成的iouMat（混淆矩阵）来计算recall和precision和hmean（F1得分）
+        gt: 一张图里若干文字框传入的 gt
+        pred:
+        '''
 
-        def get_union(pD, pG):
+        def get_union(pD, pG): # 求并集
             return Polygon(pD).union(Polygon(pG)).area
 
-        def get_intersection_over_union(pD, pG):
+        def get_intersection_over_union(pD, pG): # 求iou
             return get_intersection(pD, pG) / get_union(pD, pG)
 
-        def get_intersection(pD, pG):
+        def get_intersection(pD, pG): # 求交集
             return Polygon(pD).intersection(Polygon(pG)).area
 
         def compute_ap(confList, matchList, numGtCare):
@@ -67,12 +72,12 @@ class DetectionIoUEvaluator(object):
 
         perSampleMetrics = {}
 
-        matchedSum = 0
+        matchedSum = 0 # pred和gt匹配的总个数
 
         Rectangle = namedtuple('Rectangle', 'xmin ymin xmax ymax')
 
-        numGlobalCareGt = 0
-        numGlobalCareDet = 0
+        numGlobalCareGt = 0 # 整张图里care的gt
+        numGlobalCareDet = 0 # 整张图里care的预测文字框
 
         arrGlobalConfidences = []
         arrGlobalMatches = []
@@ -81,7 +86,7 @@ class DetectionIoUEvaluator(object):
         precision = 0
         hmean = 0
 
-        detMatched = 0
+        detMatched = 0 # 预测文本框匹配的个数
 
         iouMat = np.empty([1, 1])
 
@@ -92,11 +97,11 @@ class DetectionIoUEvaluator(object):
         detPolPoints = []
 
         # Array of Ground Truth Polygons' keys marked as don't Care
-        gtDontCarePolsNum = []
+        gtDontCarePolsNum = [] # 不care的gt框的索引列表
         # Array of Detected Polygons' matched with a don't Care GT
-        detDontCarePolsNum = []
+        detDontCarePolsNum = [] # 不care的预测框的索引列表
 
-        pairs = []
+        pairs = [] # pred和gt的匹配对
         detMatchedNums = []
 
         arrSampleConfidences = []
@@ -104,51 +109,54 @@ class DetectionIoUEvaluator(object):
 
         evaluationLog = ""
 
-        for n in range(len(gt)):
-            points = gt[n]['points']
+        # 先把一张图中所有多边形放到gtPols和gtPolPoints里面并且gtDontCarePolsNum记录需要忽略的多边形再gtPoints
+        for n in range(len(gt)): # 遍历每个gt框
+            points = gt[n]['points'] # 获取每个框的点坐标
             # transcription = gt[n]['text']
-            dontCare = gt[n]['ignore']
+            dontCare = gt[n]['ignore'] # 获取是否忽略的标记
 
             if not Polygon(points).is_valid or not Polygon(points).is_simple:
                 continue
 
             gtPol = points
             gtPols.append(gtPol)
-            gtPolPoints.append(points)
-            if dontCare:
-                gtDontCarePolsNum.append(len(gtPols) - 1)
+            gtPolPoints.append(points) # 把他们放到 gtPol和gtPolPoints列表里，虽然没看出这两个列表有什么不同
+            if dontCare:# 如果这个 gt 是要忽略的
+                gtDontCarePolsNum.append(len(gtPols) - 1)  # 就再 gtDontCarePolsNum列表里加入这个框的 gtPol
 
         evaluationLog += "GT polygons: " + str(len(gtPols)) + (" (" + str(len(
             gtDontCarePolsNum)) + " don't care)\n" if len(gtDontCarePolsNum) > 0 else "\n")
 
-        for n in range(len(pred)):
-            points = pred[n]['points']
+        for n in range(len(pred)): # 遍历每个预测框
+            points = pred[n]['points'] # 获取每个框的点坐标
             if not Polygon(points).is_valid or not Polygon(points).is_simple:
                 continue
 
             detPol = points
             detPols.append(detPol)
-            detPolPoints.append(points)
-            if len(gtDontCarePolsNum) > 0:
-                for dontCarePol in gtDontCarePolsNum:
-                    dontCarePol = gtPols[dontCarePol]
-                    intersected_area = get_intersection(dontCarePol, detPol)
-                    pdDimensions = Polygon(detPol).area
-                    precision = 0 if pdDimensions == 0 else intersected_area / pdDimensions
+            detPolPoints.append(points) # 以上操作类似
+
+            if len(gtDontCarePolsNum) > 0: # 如果有需要忽略的 gt文字框
+                for dontCarePol in gtDontCarePolsNum: # 遍历这些需要忽略的 gt文字框
+                    dontCarePol = gtPols[dontCarePol] # 获取每个 gt文字框的点坐标
+                    intersected_area = get_intersection(dontCarePol, detPol) # 计算当前这个 预测框 和 需要忽略的框 的 交集
+                    pdDimensions = Polygon(detPol).area # 如果预测的文字框面积
+                    precision = 0 if pdDimensions == 0 else intersected_area / pdDimensions # precision（不同于iou）
                     if (precision > self.area_precision_constraint):
-                        detDontCarePolsNum.append(len(detPols) - 1)
-                        break
+                        detDontCarePolsNum.append(len(detPols) - 1) # 同理
+                        break # 后面你不用找了，因为这个已经要忽略了
 
         evaluationLog += "DET polygons: " + str(len(detPols)) + (" (" + str(len(
             detDontCarePolsNum)) + " don't care)\n" if len(detDontCarePolsNum) > 0 else "\n")
 
+        # 来了，来了，重点来了
         if len(gtPols) > 0 and len(detPols) > 0:
             # Calculate IoU and precision matrixs
             outputShape = [len(gtPols), len(detPols)]
             iouMat = np.empty(outputShape)
             gtRectMat = np.zeros(len(gtPols), np.int8)
             detRectMat = np.zeros(len(detPols), np.int8)
-            if self.is_output_polygon:
+            if self.is_output_polygon: # 如果输出框是多边形，直接标记计算对应 iou填充iouMat
                 for gtNum in range(len(gtPols)):
                     for detNum in range(len(detPols)):
                         pG = gtPols[gtNum]
@@ -157,34 +165,37 @@ class DetectionIoUEvaluator(object):
             else:
                 # gtPols = np.float32(gtPols)
                 # detPols = np.float32(detPols)
-                for gtNum in range(len(gtPols)):
+                for gtNum in range(len(gtPols)): # 是矩形，使用 iou_rotate 计算iou，填充矩阵
                     for detNum in range(len(detPols)):
                         pG = np.float32(gtPols[gtNum])
                         pD = np.float32(detPols[detNum])
                         iouMat[gtNum, detNum] = iou_rotate(pD, pG)
+
+            # 计算好 iouMat 后
             for gtNum in range(len(gtPols)):
-                for detNum in range(len(detPols)):
+                for detNum in range(len(detPols)): # 暴力循环每种 pair
+                    # 如果当前 gtNum的框 和 deNum的框 都还没有配对，并且这两个框都不是要忽略的
                     if gtRectMat[gtNum] == 0 and detRectMat[
                         detNum] == 0 and gtNum not in gtDontCarePolsNum and detNum not in detDontCarePolsNum:
-                        if iouMat[gtNum, detNum] > self.iou_constraint:
+                        if iouMat[gtNum, detNum] > self.iou_constraint: # 仅通过iou阈值寻找gt和pred匹配的文字框
                             gtRectMat[gtNum] = 1
-                            detRectMat[detNum] = 1
-                            detMatched += 1
-                            pairs.append({'gt': gtNum, 'det': detNum})
-                            detMatchedNums.append(detNum)
+                            detRectMat[detNum] = 1 # 标记上
+                            detMatched += 1 # pred框匹配个数加1
+                            pairs.append({'gt': gtNum, 'det': detNum}) # pair加上新的一对
+                            detMatchedNums.append(detNum) # 保存匹配好的pred框的索引
                             evaluationLog += "Match GT #" + \
                                              str(gtNum) + " with Det #" + str(detNum) + "\n"
 
         numGtCare = (len(gtPols) - len(gtDontCarePolsNum))
-        numDetCare = (len(detPols) - len(detDontCarePolsNum))
+        numDetCare = (len(detPols) - len(detDontCarePolsNum)) # 计算真正保留下来的gt和pred的文字框个数
         if numGtCare == 0:
             recall = float(1)
             precision = float(0) if numDetCare > 0 else float(1)
         else:
-            recall = float(detMatched) / numGtCare
-            precision = 0 if numDetCare == 0 else float(
-                detMatched) / numDetCare
+            recall = float(detMatched) / numGtCare  # 匹配上的个数（预测对的个数）/ 有效 gt 个数
+            precision = 0 if numDetCare == 0 else float( detMatched) / numDetCare # 匹配上的个数（预测对的个数）/ 有效预测个数
 
+        # f1 score 对 precision 和 recall 求调和平均
         hmean = 0 if (precision + recall) == 0 else 2.0 * \
                                                     precision * recall / (precision + recall)
 
